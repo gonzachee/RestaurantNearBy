@@ -6,7 +6,7 @@ from streamlit_js_eval import get_geolocation
 st.set_page_config(page_title="Jom Makan - Malaysia Food Finder", page_icon="🍽️", layout="wide")
 
 # 🔑 PASTE YOUR GOOGLE API KEY BELOW
-GOOGLE_API_KEY = "YOUR_GOOGLE_API_KEY_HERE"
+GOOGLE_API_KEY = "AIzaSyDdc9qS9184Heyctow0f5GzPg4TYbKFhKQ"
 
 # --- CUSTOM CSS FOR MOBILE FRIENDLY CARDS ---
 st.markdown("""
