@@ -1,136 +1,181 @@
 import streamlit as st
 import requests
-import pandas as pd
 from streamlit_js_eval import get_geolocation
 
 # --- CONFIGURATION ---
-# REPLACE THIS WITH YOUR ACTUAL GOOGLE API KEY
-GOOGLE_API_KEY = "AIzaSyDdc9qS9184Heyctow0f5GzPg4TYbKFhKQ"
+st.set_page_config(page_title="Jom Makan - Malaysia Food Finder", page_icon="🍽️", layout="wide")
 
-st.set_page_config(page_title="Jom Makan - Malaysia Food Finder", page_icon="🍽️")
+# 🔑 PASTE YOUR GOOGLE API KEY BELOW
+GOOGLE_API_KEY = "YOUR_GOOGLE_API_KEY_HERE"
 
-# --- CUSTOM CSS FOR MOBILE FRIENDLY LOOK ---
+# --- CUSTOM CSS FOR MOBILE FRIENDLY CARDS ---
 st.markdown("""
     <style>
     .restaurant-card {
-        background-color: #f0f2f6;
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-        border-left: 5px solid #ff4b4b;
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 12px;
+        margin-bottom: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        border-left: 6px solid #ff4b4b;
     }
-    .status-open { color: green; font-weight: bold; }
-    .status-closed { color: red; font-weight: bold; }
+    .restaurant-card h3 {
+        margin: 0 0 10px 0;
+        color: #333;
+    }
+    .rating-badge {
+        background-color: #e6f4ea;
+        color: #137333;
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-weight: bold;
+        font-size: 0.9em;
+    }
+    .btn-waze {
+        background-color: #FECE31;
+        color: black;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+    }
+    .btn-google {
+        background-color: #4285F4;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        margin-right: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 # --- HEADER ---
 st.title("🍽️ Jom Makan Nearby")
-st.write("Find the best **Halal / Malay / Chinese / Indian** food near you.")
+st.markdown("For travelers & sales teams: Find **Open** & **High Rated** food spots instantly.")
 
-# --- STEP 1: GET GPS LOCATION ---
+# --- SIDEBAR: SEARCH SETTINGS ---
+with st.sidebar:
+    st.header("Search Settings")
+    
+    search_type = st.selectbox(
+        "Looking for?",
+        ["Restaurant", "Cafe", "Mamak", "Kopitiam", "Hawker Center"]
+    )
+
+    # Specific Cuisine Filters
+    cuisine_type = "All"
+    if search_type in ["Restaurant", "Cafe"]:
+        cuisine_type = st.radio(
+            "Cuisine / Type:",
+            ["All", "Malay", "Chinese", "Indian", "Halal", "Western", "Thai"],
+            index=0
+        )
+
+    radius_km = st.slider("Distance (KM)", 1, 10, 5)
+
+# --- GPS LOGIC ---
+st.info("📍 Attempting to get your GPS location... Please 'Allow' if asked.")
 loc = get_geolocation()
+
+# Default to KLCC if GPS fails (for testing)
+user_lat, user_lon = 3.1579, 101.7116 
+gps_available = False
 
 if loc:
     user_lat = loc['coords']['latitude']
     user_lon = loc['coords']['longitude']
-    st.success(f"📍 Location Found: {user_lat:.4f}, {user_lon:.4f}")
+    gps_available = True
+    st.success(f"✅ Location Found: {user_lat:.4f}, {user_lon:.4f}")
 else:
-    st.warning("⚠️ Waiting for GPS... (Allow location access in browser)")
-    # Default to KLCC for demo purposes if no GPS yet
-    user_lat, user_lon = 3.1579, 101.7116 
+    st.warning("⚠️ GPS not detected yet. Using Default Location (KLCC) for demo.")
 
 st.divider()
 
-# --- STEP 2: USER PREFERENCES ---
-col1, col2 = st.columns(2)
-
-with col1:
-    search_type = st.selectbox(
-        "Looking for?",
-        ["Restaurant", "Cafe", "Mamak", "Hotel", "Tourist Attraction"]
-    )
-
-with col2:
-    radius_km = st.selectbox(
-        "Distance (KM)",
-        [1, 3, 5, 10]
-    )
-
-# Specific Malaysia Food Categories
-food_category = "All"
-if search_type in ["Restaurant", "Cafe", "Mamak"]:
-    food_category = st.radio(
-        "Cuisine Type:",
-        ["All", "Malay", "Chinese", "Indian", "Halal", "Western"],
-        horizontal=True
-    )
-
-# --- STEP 3: SEARCH LOGIC ---
+# --- FUNCTION: GOOGLE PLACES SEARCH ---
 def search_google_maps(lat, lon, radius, keyword, category):
     url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
     
-    # Construct the search query
-    search_term = keyword
-    if category != "All" and keyword in ["Restaurant", "Cafe", "Mamak"]:
-        search_term = f"{category} {keyword}"
+    # 1. Build the search term (e.g., "Malay Restaurant")
+    final_keyword = keyword
+    if category != "All":
+        final_keyword = f"{category} {keyword}"
+    
+    # 2. Map 'Mamak' explicitly because Google understands it well in Malaysia
+    search_type_api = final_keyword.lower()
     
     params = {
         "location": f"{lat},{lon}",
-        "radius": radius * 1000, # Convert km to meters
-        "keyword": search_term,
-        "type": "restaurant" if keyword == "Mamak" else keyword.lower(), # Map keywords to API types
-        "opennow": "true", # Only show open places
-        "minprice": 0,
+        "radius": radius * 1000, 
+        "keyword": search_type_api,
+        "type": "restaurant",
+        "opennow": "true", # Crucial for travelers!
         "key": GOOGLE_API_KEY
     }
     
     try:
         response = requests.get(url, params=params)
-        return response.json().get('results', [])
+        data = response.json()
+        
+        # DEBUG: Check for API errors (Billing, Quota, etc)
+        if data.get('status') != "OK" and data.get('status') != "ZERO_RESULTS":
+            st.error(f"⚠️ API Error: {data.get('status')}")
+            st.error(f"Details: {data.get('error_message')}")
+            return []
+            
+        return data.get('results', [])
     except Exception as e:
-        st.error(f"Error connecting to Maps: {e}")
+        st.error(f"Connection Error: {e}")
         return []
 
-# --- STEP 4: DISPLAY RESULTS ---
-if st.button("🔍 Search Nearby"):
-    if GOOGLE_API_KEY == "YOUR_GOOGLE_API_KEY_HERE":
-        st.error("🚨 Please put your Google API Key in the code first!")
+# --- MAIN UI ---
+if st.button("🔍 Find Food Nearby", type="primary"):
+    
+    if "YOUR_GOOGLE_API" in GOOGLE_API_KEY:
+        st.error("🚨 Stop! You forgot to paste your Google API Key in the code.")
     else:
-        with st.spinner(f"Searching for {food_category if food_category != 'All' else ''} {search_type}..."):
-            results = search_google_maps(user_lat, user_lon, radius_km, search_type, food_category)
+        with st.spinner("Searching for the best spots..."):
+            results = search_google_maps(user_lat, user_lon, radius_km, search_type, cuisine_type)
             
-            # Filter for Rating > 3.0
-            results = [r for r in results if r.get('rating', 0) >= 3.0]
+            # Filter: Only show places with valid ratings (e.g. 3.5+)
+            # Note: Some new places have 0 rating, we keep them if you want
+            valid_results = [r for r in results if r.get('rating', 0) >= 3.0]
             
-            if not results:
-                st.warning("No open places found matching your criteria nearby.")
+            if not valid_results:
+                st.warning(f"No open places found for **{cuisine_type} {search_type}** within {radius_km}km.")
+                st.write("Tip: Try increasing the distance or selecting 'All' cuisines.")
             else:
-                st.write(f"Found **{len(results)}** places:")
+                st.write(f"Found **{len(valid_results)}** places:")
                 
-                for place in results:
+                for place in valid_results:
                     name = place.get('name')
                     rating = place.get('rating', 'N/A')
-                    user_ratings = place.get('user_ratings_total', 0)
-                    vicinity = place.get('vicinity')
+                    total_ratings = place.get('user_ratings_total', 0)
+                    address = place.get('vicinity', 'No address')
+                    
                     place_lat = place['geometry']['location']['lat']
                     place_lng = place['geometry']['location']['lng']
                     
-                    # Create clickable Google Maps and Waze Links
-                    gmaps_link = f"https://www.google.com/maps/dir/?api=1&destination={place_lat},{place_lng}"
-                    waze_link = f"https://waze.com/ul?ll={place_lat},{place_lng}&navigate=yes"
-                    
-                    # Render Card
+                    # Links
+                    waze_url = f"https://waze.com/ul?ll={place_lat},{place_lng}&navigate=yes"
+                    google_url = f"https://www.google.com/maps/search/?api=1&query={place_lat},{place_lng}&query_place_id={place.get('place_id')}"
+
+                    # Render Card using HTML
                     st.markdown(f"""
                     <div class="restaurant-card">
-                        <h3>{name}</h3>
-                        <p>⭐ <b>{rating}</b> ({user_ratings} reviews)</p>
-                        <p style="color:gray; font-size:0.9em;">{vicinity}</p>
-                        <a href="{gmaps_link}" target="_blank" style="text-decoration:none;">
-                            <button style="background-color:#4285F4; color:white; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">🗺️ Google Maps</button>
-                        </a>
-                        <a href="{waze_link}" target="_blank" style="text-decoration:none;">
-                            <button style="background-color:#FECE31; color:black; border:none; padding:8px 15px; border-radius:5px; cursor:pointer; margin-left:10px;">🚗 Waze</button>
-                        </a>
+                        <div style="display:flex; justify-content:space-between;">
+                            <h3>{name}</h3>
+                            <span class="rating-badge">⭐ {rating} ({total_ratings})</span>
+                        </div>
+                        <p style="color:#666; margin-bottom:15px;">📍 {address}</p>
+                        <a href="{google_url}" target="_blank" class="btn-google">🗺️ Maps</a>
+                        <a href="{waze_url}" target="_blank" class="btn-waze">🚗 Waze</a>
                     </div>
                     """, unsafe_allow_html=True)
