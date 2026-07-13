@@ -1,0 +1,4 @@
+# Locally installed Claude Code skills (npx skills add ...) — not part of this app
+.agents/
+.claude/
+skills-lock.json
